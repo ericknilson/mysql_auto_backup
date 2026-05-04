@@ -1,0 +1,427 @@
+basePath: /
+definitions:
+  github_com_erick_nilson_mysql_auto_backup_internal_models.BackupLog:
+    properties:
+      connection:
+        $ref: '#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection'
+      connection_id:
+        type: integer
+      created_at:
+        type: string
+      error_message:
+        type: string
+      file_name:
+        type: string
+      id:
+        type: integer
+      sent_at:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_erick_nilson_mysql_auto_backup_internal_models.Connection:
+    properties:
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  internal_handlers.CreateConnectionRequest:
+    properties:
+      database:
+        example: loja
+        type: string
+      host:
+        example: db.exemplo.com
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: prod-mysql-01
+        type: string
+      password:
+        example: s3nh4-d0-banc0
+        type: string
+      port:
+        example: "3306"
+        type: string
+      user:
+        example: backup_user
+        type: string
+    required:
+    - database
+    - host
+    - name
+    - password
+    - port
+    - user
+    type: object
+  internal_handlers.ErrorResponse:
+    properties:
+      error:
+        example: unauthorized
+        type: string
+    type: object
+  internal_handlers.ListBackupsResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.BackupLog'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  internal_handlers.RunBackupRequest:
+    properties:
+      connection_ids:
+        example:
+        - 1
+        - 2
+        - 3
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_handlers.RunBackupResponse:
+    properties:
+      connection_ids:
+        example:
+        - 1
+        - 2
+        - 3
+        items:
+          type: integer
+        type: array
+      message:
+        example: backup disparado para todas as conexões ativas
+        type: string
+    type: object
+  internal_handlers.UpdateConnectionRequest:
+    properties:
+      database:
+        example: loja
+        type: string
+      host:
+        example: novo.exemplo.com
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: prod-mysql-01
+        type: string
+      password:
+        example: s3nh4-nov4
+        type: string
+      port:
+        example: "3306"
+        type: string
+      user:
+        example: backup_user
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: Erick Nilson
+  description: |-
+    Sistema de backup automático de bancos MySQL para Cloudflare R2.
+    Permite cadastrar conexões (com credenciais criptografadas em repouso via AES-256-GCM), agenda backups diários às 03:00 (America/Sao_Paulo) e expõe disparo manual + listagem de logs.
+    Todos os endpoints sob /api requerem o header `X-API-Key`.
+  title: MySQL Auto Backup API
+  version: "1.0"
+paths:
+  /api/backups:
+    get:
+      description: Retorna o histórico de execuções (sucesso e falha) com paginação.
+        Aceita filtros por conexão e por intervalo de data (com base em sent_at).
+      parameters:
+      - description: Filtrar por ID de conexão
+        in: query
+        name: connection_id
+        type: integer
+      - description: Data inicial inclusiva (YYYY-MM-DD)
+        example: "2026-05-01"
+        in: query
+        name: start_date
+        type: string
+      - description: Data final inclusiva (YYYY-MM-DD)
+        example: "2026-05-31"
+        in: query
+        name: end_date
+        type: string
+      - default: 1
+        description: Página (default 1)
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Itens por página (default 50)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.ListBackupsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Lista logs de backup
+      tags:
+      - backups
+  /api/backups/run:
+    post:
+      consumes:
+      - application/json
+      description: Inicia o backup em background e responde 202 imediatamente. O resultado
+        individual é gravado em backup_logs e pode ser consultado em GET /api/backups.
+        Se connection_ids for omitido ou vazio, executa para todas as conexões ativas.
+        Caso contrário, executa apenas para os IDs informados que estiverem com is_active
+        = true.
+      parameters:
+      - description: IDs específicos (opcional)
+        in: body
+        name: payload
+        schema:
+          $ref: '#/definitions/internal_handlers.RunBackupRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_handlers.RunBackupResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Dispara backup imediato
+      tags:
+      - backups
+  /api/connections:
+    get:
+      description: Retorna todas as conexões não excluídas (soft-deleted são automaticamente
+        filtradas pelo GORM).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Lista todas as conexões
+      tags:
+      - connections
+    post:
+      consumes:
+      - application/json
+      description: Recebe credenciais em claro, valida com Ping e, em caso de sucesso,
+        criptografa (AES-256-GCM) e persiste. Se a conexão não puder ser estabelecida,
+        nada é gravado.
+      parameters:
+      - description: Dados da conexão
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateConnectionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection'
+        "400":
+          description: payload inválido
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: API key ausente ou inválida
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "422":
+          description: não foi possível conectar ao banco com as credenciais fornecidas
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Cadastra uma nova conexão MySQL
+      tags:
+      - connections
+  /api/connections/{id}:
+    delete:
+      description: A conexão é marcada como excluída populando deleted_at. Logs de
+        backup históricos relacionados continuam acessíveis via /api/backups.
+      parameters:
+      - description: ID da conexão
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Remove uma conexão (soft delete)
+      tags:
+      - connections
+    get:
+      description: Retorna os metadados de uma conexão. As credenciais nunca são expostas
+        pela API.
+      parameters:
+      - description: ID da conexão
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Detalha uma conexão
+      tags:
+      - connections
+    put:
+      consumes:
+      - application/json
+      description: Atualização parcial. Campos omitidos preservam o valor atual. Antes
+        de persistir, a conexão é re-validada com as credenciais resultantes — se
+        o Ping falhar, nada é alterado.
+      parameters:
+      - description: ID da conexão
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Campos a atualizar (todos opcionais)
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateConnectionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "422":
+          description: não foi possível conectar ao banco com as credenciais fornecidas
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Atualiza uma conexão existente
+      tags:
+      - connections
+schemes:
+- http
+- https
+securityDefinitions:
+  ApiKeyAuth:
+    description: Chave de API estática definida em API_KEY no .env do servidor.
+    in: header
+    name: X-API-Key
+    type: apiKey
+swagger: "2.0"

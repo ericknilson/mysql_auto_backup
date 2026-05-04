@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version *)",
+      "Bash(go mod *)",
+      "Bash(go build *)",
+      "Bash(go test *)",
+      "Bash(go vet *)",
+      "Bash(swag --version)",
+      "Bash(go env *)",
+      "Bash(go install *)",
+      "Bash(/Users/ericknilsonsouzasodrefilho/go/bin/swag --version)",
+      "Bash(/Users/ericknilsonsouzasodrefilho/go/bin/swag init *)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

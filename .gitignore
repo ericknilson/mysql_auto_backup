@@ -1,0 +1,19 @@
+.env
+*.env.local
+
+# Binários
+bin/
+mysql_auto_backup
+/server
+
+# Dumps temporários
+*.sql.tmp
+tmp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store

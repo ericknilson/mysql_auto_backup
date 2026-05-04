@@ -1,0 +1,624 @@
+{
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "Sistema de backup automático de bancos MySQL para Cloudflare R2.\nPermite cadastrar conexões (com credenciais criptografadas em repouso via AES-256-GCM), agenda backups diários às 03:00 (America/Sao_Paulo) e expõe disparo manual + listagem de logs.\nTodos os endpoints sob /api requerem o header `X-API-Key`.",
+        "title": "MySQL Auto Backup API",
+        "contact": {
+            "name": "Erick Nilson"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/api/backups": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retorna o histórico de execuções (sucesso e falha) com paginação. Aceita filtros por conexão e por intervalo de data (com base em sent_at).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "backups"
+                ],
+                "summary": "Lista logs de backup",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Filtrar por ID de conexão",
+                        "name": "connection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2026-05-01",
+                        "description": "Data inicial inclusiva (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2026-05-31",
+                        "description": "Data final inclusiva (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Página (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Itens por página (default 50)",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ListBackupsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/backups/run": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Inicia o backup em background e responde 202 imediatamente. O resultado individual é gravado em backup_logs e pode ser consultado em GET /api/backups. Se connection_ids for omitido ou vazio, executa para todas as conexões ativas. Caso contrário, executa apenas para os IDs informados que estiverem com is_active = true.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "backups"
+                ],
+                "summary": "Dispara backup imediato",
+                "parameters": [
+                    {
+                        "description": "IDs específicos (opcional)",
+                        "name": "payload",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.RunBackupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.RunBackupResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/connections": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retorna todas as conexões não excluídas (soft-deleted são automaticamente filtradas pelo GORM).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "Lista todas as conexões",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Recebe credenciais em claro, valida com Ping e, em caso de sucesso, criptografa (AES-256-GCM) e persiste. Se a conexão não puder ser estabelecida, nada é gravado.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "Cadastra uma nova conexão MySQL",
+                "parameters": [
+                    {
+                        "description": "Dados da conexão",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CreateConnectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection"
+                        }
+                    },
+                    "400": {
+                        "description": "payload inválido",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "API key ausente ou inválida",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "não foi possível conectar ao banco com as credenciais fornecidas",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/connections/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retorna os metadados de uma conexão. As credenciais nunca são expostas pela API.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "Detalha uma conexão",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID da conexão",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Atualização parcial. Campos omitidos preservam o valor atual. Antes de persistir, a conexão é re-validada com as credenciais resultantes — se o Ping falhar, nada é alterado.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "Atualiza uma conexão existente",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID da conexão",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Campos a atualizar (todos opcionais)",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateConnectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "não foi possível conectar ao banco com as credenciais fornecidas",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "A conexão é marcada como excluída populando deleted_at. Logs de backup históricos relacionados continuam acessíveis via /api/backups.",
+                "tags": [
+                    "connections"
+                ],
+                "summary": "Remove uma conexão (soft delete)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID da conexão",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_erick_nilson_mysql_auto_backup_internal_models.BackupLog": {
+            "type": "object",
+            "properties": {
+                "connection": {
+                    "$ref": "#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.Connection"
+                },
+                "connection_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "sent_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_erick_nilson_mysql_auto_backup_internal_models.Connection": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "gorm.DeletedAt": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string"
+                },
+                "valid": {
+                    "description": "Valid is true if Time is not NULL",
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.CreateConnectionRequest": {
+            "type": "object",
+            "required": [
+                "database",
+                "host",
+                "name",
+                "password",
+                "port",
+                "user"
+            ],
+            "properties": {
+                "database": {
+                    "type": "string",
+                    "example": "loja"
+                },
+                "host": {
+                    "type": "string",
+                    "example": "db.exemplo.com"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "name": {
+                    "type": "string",
+                    "example": "prod-mysql-01"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "s3nh4-d0-banc0"
+                },
+                "port": {
+                    "type": "string",
+                    "example": "3306"
+                },
+                "user": {
+                    "type": "string",
+                    "example": "backup_user"
+                }
+            }
+        },
+        "internal_handlers.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "unauthorized"
+                }
+            }
+        },
+        "internal_handlers.ListBackupsResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_erick_nilson_mysql_auto_backup_internal_models.BackupLog"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "internal_handlers.RunBackupRequest": {
+            "type": "object",
+            "properties": {
+                "connection_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        1,
+                        2,
+                        3
+                    ]
+                }
+            }
+        },
+        "internal_handlers.RunBackupResponse": {
+            "type": "object",
+            "properties": {
+                "connection_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        1,
+                        2,
+                        3
+                    ]
+                },
+                "message": {
+                    "type": "string",
+                    "example": "backup disparado para todas as conexões ativas"
+                }
+            }
+        },
+        "internal_handlers.UpdateConnectionRequest": {
+            "type": "object",
+            "properties": {
+                "database": {
+                    "type": "string",
+                    "example": "loja"
+                },
+                "host": {
+                    "type": "string",
+                    "example": "novo.exemplo.com"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "name": {
+                    "type": "string",
+                    "example": "prod-mysql-01"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "s3nh4-nov4"
+                },
+                "port": {
+                    "type": "string",
+                    "example": "3306"
+                },
+                "user": {
+                    "type": "string",
+                    "example": "backup_user"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "description": "Chave de API estática definida em API_KEY no .env do servidor.",
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header"
+        }
+    }
+}

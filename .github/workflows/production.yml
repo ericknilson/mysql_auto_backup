@@ -1,0 +1,44 @@
+name: MySQL Auto Backup
+
+on:
+  push:
+    branches:
+      - main
+      
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 'stable'
+
+      - name: Build
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o mysql_auto_backup_binary ./cmd/server
+        # run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o mysql_auto_backup_binary -a -ldflags '-extldflags "-static"'
+
+      - name: Copy to PRODUCTION
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.PRODUCTION_IP }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          password: ${{ secrets.PRODUCTION_PASS }}
+          source: "mysql_auto_backup_binary"
+          target: "~/code/mysql_auto_backup"
+      - name: Multiple Command
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PRODUCTION_IP }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          password: ${{ secrets.PRODUCTION_PASS }}
+          script: |
+            cd ~/code/mysql_auto_backup
+            # pm2 restart mysql_auto_backup
+
+      
