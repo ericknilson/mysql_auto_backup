@@ -32,12 +32,14 @@ jobs:
           source: "mysql_auto_backup_binary"
           target: "~/code/mysql_auto_backup"
       - name: Multiple Command
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.PRODUCTION_IP }}
           username: ${{ secrets.PRODUCTION_USER }}
           password: ${{ secrets.PRODUCTION_PASS }}
           script: |
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             cd ~/code/mysql_auto_backup
             pm2 restart mysql_auto_backup
 
