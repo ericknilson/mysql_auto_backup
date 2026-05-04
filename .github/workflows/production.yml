@@ -39,6 +39,6 @@ jobs:
           password: ${{ secrets.PRODUCTION_PASS }}
           script: |
             cd ~/code/mysql_auto_backup
-            # pm2 restart mysql_auto_backup
+            pm2 restart mysql_auto_backup
 
       
