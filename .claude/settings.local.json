@@ -11,7 +11,11 @@
       "Bash(go install *)",
       "Bash(/Users/ericknilsonsouzasodrefilho/go/bin/swag --version)",
       "Bash(/Users/ericknilsonsouzasodrefilho/go/bin/swag init *)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Read(//tmp/**)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }

@@ -42,8 +42,7 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	migrationsPath := getEnv("MIGRATIONS_PATH", "migrations")
-	if err := migrations.Run(cfg, migrationsPath); err != nil {
+	if err := migrations.Run(cfg); err != nil {
 		log.Fatalf("migrations: %v", err)
 	}
 	log.Printf("[migrations] aplicadas com sucesso")
@@ -98,11 +97,4 @@ func main() {
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 	log.Printf("encerrando...")
-}
-
-func getEnv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
 }
