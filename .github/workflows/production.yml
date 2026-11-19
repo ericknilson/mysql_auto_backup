@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      
+
 jobs:
   build:
 
@@ -22,6 +22,34 @@ jobs:
       - name: Build
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o mysql_auto_backup_binary ./cmd/server
         # run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o mysql_auto_backup_binary -a -ldflags '-extldflags "-static"'
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql_auto_backup_binary
+          path: mysql_auto_backup_binary
+          retention-days: 1
+
+  deploy-production:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: mysql_auto_backup_binary
+
+      - name: Restore executable permission
+        run: chmod +x mysql_auto_backup_binary
+
+      - name: Ensure target directory
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.PRODUCTION_IP }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          password: ${{ secrets.PRODUCTION_PASS }}
+          script: mkdir -p ~/code/mysql_auto_backup
 
       - name: Copy to PRODUCTION
         uses: appleboy/scp-action@master
@@ -41,6 +69,55 @@ jobs:
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             cd ~/code/mysql_auto_backup
-            pm2 restart mysql_auto_backup
+            if pm2 describe mysql_auto_backup > /dev/null 2>&1; then
+              pm2 restart mysql_auto_backup
+            else
+              pm2 start ./mysql_auto_backup_binary --name mysql_auto_backup --cwd "$HOME/code/mysql_auto_backup"
+            fi
+            pm2 save
 
-      
+  deploy-clube-das-ricas:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: mysql_auto_backup_binary
+
+      - name: Restore executable permission
+        run: chmod +x mysql_auto_backup_binary
+
+      - name: Ensure target directory
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.CLUBEDASRYCAS_IP }}
+          username: ${{ secrets.CLUBEDASRYCAS_USER }}
+          password: ${{ secrets.CLUBEDASRYCAS_PASS }}
+          script: mkdir -p ~/code/mysql_auto_backup
+
+      - name: Copy to CLUBEDASRYCAS
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.CLUBEDASRYCAS_IP }}
+          username: ${{ secrets.CLUBEDASRYCAS_USER }}
+          password: ${{ secrets.CLUBEDASRYCAS_PASS }}
+          source: "mysql_auto_backup_binary"
+          target: "~/code/mysql_auto_backup"
+      - name: Multiple Command
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.CLUBEDASRYCAS_IP }}
+          username: ${{ secrets.CLUBEDASRYCAS_USER }}
+          password: ${{ secrets.CLUBEDASRYCAS_PASS }}
+          script: |
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            cd ~/code/mysql_auto_backup
+            if pm2 describe mysql_auto_backup > /dev/null 2>&1; then
+              pm2 restart mysql_auto_backup
+            else
+              pm2 start ./mysql_auto_backup_binary --name mysql_auto_backup --cwd "$HOME/code/mysql_auto_backup"
+            fi
+            pm2 save
